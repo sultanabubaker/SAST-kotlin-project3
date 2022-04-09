@@ -1,0 +1,52 @@
+name: Nightly Release
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+
+  # Run reusable test workflow
+  test:
+    name: Test
+    uses: ./.github/workflows/reusable-tests.yml
+
+  # Run reusable integration tests workflow
+  integrationTests:
+    name: Integration Tests
+    uses: ./.github/workflows/reusable-integration-tests.yml
+
+  # Prepare and publish the Gradle Plugins repository
+  release:
+    name: Release to Gradle Plugins
+    needs:
+      - test
+      - integrationTests
+    runs-on: ubuntu-latest
+    steps:
+
+      # Check out current repository
+      - name: Fetch Sources
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      # Setup Java 8 environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: 11
+          cache: gradle
+
+      # Publish the plugin to the Gradle Plugins
+      - name: Publish Plugin
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+        run: ./gradlew publishSnapshotPublicationToSnapshotRepository -Psnapshot=true -PossrhUsername=$OSSRH_USERNAME -PossrhPassword=$OSSRH_PASSWORD
+
+      # Store already-built plugin as an artifact for downloading
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          path: ./build/libs/*-SNAPSHOT.jar
